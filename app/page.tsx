@@ -8,12 +8,14 @@ import { CheckCircle2, LogOut } from "lucide-react"
 import { AttendanceCalendar } from "@/components/attendance-calendar"
 import { DailyMission } from "@/components/daily-mission"
 import { UserRanking } from "@/components/user-ranking"
+import { GoogleSheetsService } from "@/lib/google-sheets"
 
 export default function AttendancePage() {
-  const [currentStreak, setCurrentStreak] = useState(3)
+  const [currentStreak, setCurrentStreak] = useState(0)
   const [hasCheckedToday, setHasCheckedToday] = useState(false)
   const [showCongrats, setShowCongrats] = useState(false)
   const [userInfo, setUserInfo] = useState<{ nickname: string; email: string } | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -34,9 +36,9 @@ export default function AttendancePage() {
       return
     }
 
-    const streakValue = localStorage.getItem("currentStreak") || "3"
+    const streakValue = localStorage.getItem("currentStreak") || "0"
     const savedStreak = Number.parseInt(streakValue)
-    setCurrentStreak(Number.isNaN(savedStreak) ? 3 : savedStreak)
+    setCurrentStreak(Number.isNaN(savedStreak) ? 0 : savedStreak)
 
     const today = new Date().toDateString()
     const lastCheckDate = localStorage.getItem("lastAttendanceDate")
@@ -58,12 +60,14 @@ export default function AttendancePage() {
     localStorage.removeItem("userInfo")
     localStorage.removeItem("currentStreak")
     localStorage.removeItem("lastAttendanceDate")
+    localStorage.removeItem("rankingData")
     router.push("/login")
   }
 
   const handleAttendanceCheck = async () => {
-    if (!hasCheckedToday) {
-      const newStreak = Number.isNaN(currentStreak) ? 1 : currentStreak + 1
+    if (!hasCheckedToday && !isLoading) {
+      setIsLoading(true)
+      const newStreak = currentStreak + 1
       setHasCheckedToday(true)
       setCurrentStreak(newStreak)
       setShowCongrats(true)
@@ -72,12 +76,102 @@ export default function AttendancePage() {
       localStorage.setItem("lastAttendanceDate", today)
       localStorage.setItem("currentStreak", newStreak.toString())
 
-      saveAttendanceToSheet()
+      await saveAttendanceToSheet(newStreak)
+      setIsLoading(false)
     }
   }
 
-  const saveAttendanceToSheet = async () => {
-    console.log("Saving attendance to Google Sheets...")
+  const saveAttendanceToSheet = async (streak: number) => {
+    if (!userInfo) return
+
+    try {
+      const totalDaysStr = localStorage.getItem("totalAttendanceDays") || "0"
+      const totalDays = Number.parseInt(totalDaysStr) + 1
+      localStorage.setItem("totalAttendanceDays", totalDays.toString())
+
+      updateRankingData(userInfo.nickname, streak, totalDays)
+
+      console.log("[v0] Saving attendance data:", {
+        nickname: userInfo.nickname,
+        email: userInfo.email,
+        streak: streak,
+        totalDays: totalDays,
+      })
+
+      const googleSheets = GoogleSheetsService.getInstance()
+      const success = await googleSheets.saveAttendance({
+        nickname: userInfo.nickname,
+        email: userInfo.email,
+        date: new Date().toISOString(),
+        streak: streak,
+        totalDays: totalDays,
+      })
+
+      if (success) {
+        console.log("[v0] Successfully saved attendance to Google Sheets")
+      } else {
+        console.log("[v0] Failed to save to Google Sheets, but local data is preserved")
+      }
+    } catch (error) {
+      console.error("[v0] Error saving attendance:", error)
+    }
+  }
+
+  const updateRankingData = (nickname: string, streak: number, totalDays: number) => {
+    try {
+      const existingRankingData = localStorage.getItem("rankingData")
+      let rankingData = existingRankingData ? JSON.parse(existingRankingData) : []
+
+      // Find existing user or create new entry
+      const existingUserIndex = rankingData.findIndex((user: any) => user.name === nickname)
+
+      const userIcons = ["👤", "🧑", "👩", "🧑‍💼", "👩‍💼", "🧑‍🎓", "👩‍🎓", "🧑‍💻", "👩‍💻", "🧑‍🔬"]
+      const randomIcon = userIcons[Math.floor(Math.random() * userIcons.length)]
+
+      if (existingUserIndex >= 0) {
+        // Update existing user
+        rankingData[existingUserIndex] = {
+          ...rankingData[existingUserIndex],
+          streak: streak,
+          totalDays: totalDays,
+          isCurrentUser: true,
+        }
+      } else {
+        // Add new user
+        rankingData.push({
+          name: nickname,
+          streak: streak,
+          totalDays: totalDays,
+          icon: randomIcon,
+          isCurrentUser: true,
+        })
+      }
+
+      // Reset isCurrentUser for other users
+      rankingData = rankingData.map((user: any) => ({
+        ...user,
+        isCurrentUser: user.name === nickname,
+      }))
+
+      // Sort by streak (descending), then by totalDays (descending)
+      rankingData.sort((a: any, b: any) => {
+        if (b.streak !== a.streak) {
+          return b.streak - a.streak
+        }
+        return b.totalDays - a.totalDays
+      })
+
+      // Assign ranks
+      rankingData = rankingData.map((user: any, index: number) => ({
+        ...user,
+        rank: index + 1,
+      }))
+
+      localStorage.setItem("rankingData", JSON.stringify(rankingData))
+      console.log("[v0] Updated ranking data:", rankingData)
+    } catch (error) {
+      console.error("[v0] Error updating ranking data:", error)
+    }
   }
 
   if (!userInfo) {
@@ -165,7 +259,9 @@ export default function AttendancePage() {
           <h1 className="text-3xl font-bold text-foreground">출석하기</h1>
           <div className="flex items-center justify-center gap-2 glass-card-light rounded-full px-4 py-2 animate-pulse-glow">
             <CheckCircle2 className="w-6 h-6 text-[color:var(--color-success-green)] animate-bounce-soft" />
-            <span className="text-xl font-bold text-primary">{currentStreak}일째 연속 출석 중!</span>
+            <span className="text-xl font-bold text-primary">
+              {currentStreak === 0 ? "첫 출석을 시작해보세요!" : `${currentStreak}일째 연속 출석 중!`}
+            </span>
           </div>
         </div>
 
@@ -193,9 +289,9 @@ export default function AttendancePage() {
               hasCheckedToday ? "glass-card-light" : "glass-button animate-pulse-glow"
             }`}
             onClick={handleAttendanceCheck}
-            disabled={hasCheckedToday}
+            disabled={hasCheckedToday || isLoading}
           >
-            {hasCheckedToday ? "출석 완료" : "출석하기"}
+            {isLoading ? "저장 중..." : hasCheckedToday ? "출석 완료" : "출석하기"}
           </Button>
         </div>
       </div>
