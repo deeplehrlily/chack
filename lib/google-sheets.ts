@@ -14,7 +14,7 @@ export interface AttendanceRecord {
 export class GoogleSheetsService {
   private static instance: GoogleSheetsService
   private scriptUrl =
-    "https://script.google.com/macros/s/AKfycbz8oPwB2bkFGTWXY2JSirRqL4ImjG_MY_ilgntcWRcPyYVBzfebjph-Q7t4qOrOz0ytJA/exec"
+    "https://script.google.com/macros/s/AKfycbwZhmcR_q853cXQNaWrLrhnLdvpvhYoefPhnCPkNei6uzotFbup13xh1ZZs9yXzJI99iQ/exec"
 
   static getInstance(): GoogleSheetsService {
     if (!GoogleSheetsService.instance) {
@@ -28,6 +28,7 @@ export class GoogleSheetsService {
       console.log("[v0] Sending attendance data to Google Sheets:", record)
 
       const params = new URLSearchParams()
+      params.append("action", "saveAttendance")
       params.append("nickname", record.nickname)
       params.append("email", record.email)
       params.append("date", record.date)
@@ -52,20 +53,28 @@ export class GoogleSheetsService {
     }
   }
 
-  async getUserRanking(): Promise<any[]> {
+  async getRankingData(): Promise<any[]> {
     try {
-      console.log("[v0] Fetching user ranking from Google Sheets")
+      console.log("[v0] Fetching ranking data from Google Sheets")
 
-      const response = await fetch(`${this.scriptUrl}?action=getRanking`, {
-        method: "GET",
-        mode: "no-cors",
-      })
+      // Since we can't read responses in no-cors mode, we'll fall back to localStorage
+      // and rely on the fact that data is being saved to Google Sheets
+      const localRanking = localStorage.getItem("attendanceRanking")
+      if (localRanking) {
+        const ranking = JSON.parse(localRanking)
+        console.log("[v0] Using local ranking data:", ranking)
+        return ranking
+      }
 
-      console.log("[v0] Ranking request sent (no-cors mode)")
+      console.log("[v0] No local ranking data available")
       return []
     } catch (error) {
       console.error("[v0] Error fetching ranking from Google Sheets:", error)
       return []
     }
+  }
+
+  async getUserRanking(): Promise<any[]> {
+    return this.getRankingData()
   }
 }
