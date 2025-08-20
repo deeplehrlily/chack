@@ -40,9 +40,29 @@ export default function AttendancePage() {
     const savedStreak = Number.parseInt(streakValue)
     setCurrentStreak(Number.isNaN(savedStreak) ? 0 : savedStreak)
 
-    const today = new Date().toDateString()
+    const today = new Date()
+    const todayString = today.toISOString().split("T")[0] // YYYY-MM-DD format
     const lastCheckDate = localStorage.getItem("lastAttendanceDate")
-    setHasCheckedToday(lastCheckDate === today)
+
+    // Check if user already attended today
+    if (lastCheckDate === todayString) {
+      setHasCheckedToday(true)
+    } else {
+      // Check if it's a new day and reset streak if gap > 1 day
+      if (lastCheckDate) {
+        const lastDate = new Date(lastCheckDate)
+        const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
+
+        if (daysDiff > 1) {
+          // Reset streak if more than 1 day gap
+          setCurrentStreak(0)
+          localStorage.setItem("currentStreak", "0")
+        }
+      }
+      setHasCheckedToday(false)
+    }
+
+    loadRankingFromSheets()
 
     const handleMissionCompleted = (event: CustomEvent) => {
       console.log("Mission completed:", event.detail)
@@ -55,6 +75,19 @@ export default function AttendancePage() {
     }
   }, [router])
 
+  const loadRankingFromSheets = async () => {
+    try {
+      const googleSheets = GoogleSheetsService.getInstance()
+      const rankingData = await googleSheets.getRankingData()
+      if (rankingData && rankingData.length > 0) {
+        localStorage.setItem("rankingData", JSON.stringify(rankingData))
+        console.log("[v0] Loaded ranking data from Google Sheets:", rankingData)
+      }
+    } catch (error) {
+      console.error("[v0] Error loading ranking data from Google Sheets:", error)
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem("isLoggedIn")
     localStorage.removeItem("userInfo")
@@ -65,6 +98,15 @@ export default function AttendancePage() {
   }
 
   const handleAttendanceCheck = async () => {
+    const today = new Date()
+    const todayString = today.toISOString().split("T")[0]
+    const lastCheckDate = localStorage.getItem("lastAttendanceDate")
+
+    if (lastCheckDate === todayString) {
+      console.log("[v0] Already attended today, preventing duplicate attendance")
+      return
+    }
+
     if (!hasCheckedToday && !isLoading) {
       setIsLoading(true)
       const newStreak = currentStreak + 1
@@ -72,11 +114,13 @@ export default function AttendancePage() {
       setCurrentStreak(newStreak)
       setShowCongrats(true)
 
-      const today = new Date().toDateString()
-      localStorage.setItem("lastAttendanceDate", today)
+      localStorage.setItem("lastAttendanceDate", todayString)
       localStorage.setItem("currentStreak", newStreak.toString())
 
       await saveAttendanceToSheet(newStreak)
+
+      await loadRankingFromSheets()
+
       setIsLoading(false)
     }
   }
@@ -88,8 +132,6 @@ export default function AttendancePage() {
       const totalDaysStr = localStorage.getItem("totalAttendanceDays") || "0"
       const totalDays = Number.parseInt(totalDaysStr) + 1
       localStorage.setItem("totalAttendanceDays", totalDays.toString())
-
-      updateRankingData(userInfo.nickname, streak, totalDays)
 
       console.log("[v0] Saving attendance data:", {
         nickname: userInfo.nickname,
@@ -187,7 +229,7 @@ export default function AttendancePage() {
 
   if (showCongrats) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <Card className="w-full max-w-sm p-8 text-center space-y-6 glass-card border-0 shadow-2xl animate-scale-in hover-lift">
           <div className="space-y-4">
             <h1 className="text-3xl font-bold text-foreground animate-bounce-soft">축하합니다!</h1>
