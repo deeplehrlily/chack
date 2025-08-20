@@ -15,9 +15,15 @@ interface Mission {
   completed?: boolean
 }
 
-export function DailyMission() {
+interface DailyMissionProps {
+  attendanceCompleted?: boolean
+  onMissionComplete?: () => void
+}
+
+export function DailyMission({ attendanceCompleted = false, onMissionComplete }: DailyMissionProps) {
   const [missionCompleted, setMissionCompleted] = useState(false)
   const [missionProgress, setMissionProgress] = useState<"pending" | "in-progress" | "completed">("pending")
+  const [missionUnlocked, setMissionUnlocked] = useState(false)
 
   const today = new Date().getDay() // 0 = Sunday, 1 = Monday, etc.
 
@@ -87,28 +93,51 @@ export function DailyMission() {
     const today = new Date().toDateString()
     const completedMissions = JSON.parse(localStorage.getItem("completedMissions") || "{}")
     setMissionCompleted(completedMissions[today] || false)
-  }, [])
+
+    const lastAttendanceDate = localStorage.getItem("lastAttendanceDate")
+    const todayDate = new Date().toISOString().split("T")[0] // YYYY-MM-DD format
+
+    console.log("[v0] Mission unlock check:", {
+      attendanceCompleted,
+      lastAttendanceDate,
+      todayDate,
+      matches: lastAttendanceDate === todayDate,
+    })
+
+    const isUnlocked = attendanceCompleted || (lastAttendanceDate && lastAttendanceDate.startsWith(todayDate))
+    setMissionUnlocked(isUnlocked)
+
+    console.log("[v0] Mission unlocked:", isUnlocked)
+  }, [attendanceCompleted]) // Added dependency to re-run when attendance status changes
+
+  useEffect(() => {
+    if (attendanceCompleted) {
+      setMissionUnlocked(true)
+      console.log("[v0] Mission unlocked via prop change")
+    }
+  }, [attendanceCompleted])
 
   const handleMissionClick = async () => {
-    if (missionCompleted) return
+    if (missionCompleted || !missionUnlocked) return
 
     setMissionProgress("in-progress")
 
-    // Open mission URL
     if (currentMission.url) {
       window.open(currentMission.url, "_blank")
     }
 
-    // Simulate completion after a short delay
     setTimeout(async () => {
       setMissionProgress("completed")
       setMissionCompleted(true)
 
-      // Save completion status
       const today = new Date().toDateString()
       const completedMissions = JSON.parse(localStorage.getItem("completedMissions") || "{}")
       completedMissions[today] = true
       localStorage.setItem("completedMissions", JSON.stringify(completedMissions))
+
+      if (onMissionComplete) {
+        onMissionComplete()
+      }
 
       const event = new CustomEvent("missionCompleted", {
         detail: { mission: currentMission.title },
@@ -118,42 +147,70 @@ export function DailyMission() {
   }
 
   return (
-    <Card className="p-6 space-y-5 gradient-card border-0 shadow-lg hover-lift">
+    <Card className="p-6 space-y-5 glass-card border-0 shadow-lg hover-lift">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-foreground">오늘의 미션</h2>
         <Badge
-          className={`px-3 py-1 text-sm font-semibold shadow-sm animate-pulse-glow ${
-            missionCompleted ? "gradient-success text-white" : "gradient-mission text-white"
+          className={`px-3 py-1 text-sm font-semibold shadow-sm ${
+            missionCompleted
+              ? "bg-green-500 text-white"
+              : missionUnlocked
+                ? "bg-blue-500 text-white animate-pulse"
+                : "bg-gray-400 text-white"
           }`}
         >
-          {missionCompleted ? "완료!" : "미션"}
+          {missionCompleted ? "완료!" : missionUnlocked ? "활성화" : "잠김"}
         </Badge>
       </div>
+
+      {!missionUnlocked && (
+        <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3 text-center">
+          <p className="text-sm text-yellow-800 font-medium">출석체크를 완료하면 오늘의 미션이 활성화됩니다!</p>
+        </div>
+      )}
 
       <div className="flex items-start gap-4">
         <div
           className={`w-16 h-16 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 hover-lift ${
-            missionCompleted ? "gradient-success animate-pulse-glow" : "gradient-mission animate-bounce-soft"
+            missionCompleted ? "bg-green-500" : missionUnlocked ? "bg-blue-500 animate-pulse" : "bg-gray-400"
           }`}
         >
           {missionCompleted ? (
-            <CheckCircle2 className="w-8 h-8 text-white animate-check-mark" />
+            <CheckCircle2 className="w-8 h-8 text-white" />
           ) : (
             <MissionIcon className="w-8 h-8 text-white" />
           )}
         </div>
         <div className="flex-1 space-y-3">
-          <div className="space-y-1 animate-slide-up">
-            <h3 className="text-lg font-semibold text-foreground">{currentMission.title}</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{currentMission.description}</p>
+          <div className="space-y-1">
+            <h3 className={`text-lg font-semibold ${missionUnlocked ? "text-foreground" : "text-gray-400"}`}>
+              {currentMission.title}
+            </h3>
+            <p className={`text-sm leading-relaxed ${missionUnlocked ? "text-muted-foreground" : "text-gray-400"}`}>
+              {currentMission.description}
+            </p>
           </div>
           <Button
-            className={`w-full h-11 font-semibold shadow-md transition-all duration-300 hover-lift hover-glow ${
-              missionCompleted ? "" : missionProgress === "in-progress" ? "" : "gradient-primary"
+            className={`w-full h-11 font-semibold shadow-md transition-all duration-300 hover-lift ${
+              missionCompleted
+                ? ""
+                : missionProgress === "in-progress"
+                  ? ""
+                  : missionUnlocked
+                    ? "bg-blue-500 hover:bg-blue-600"
+                    : ""
             }`}
             onClick={handleMissionClick}
-            disabled={missionCompleted}
-            variant={missionCompleted ? "secondary" : missionProgress === "in-progress" ? "outline" : "default"}
+            disabled={missionCompleted || !missionUnlocked}
+            variant={
+              missionCompleted
+                ? "secondary"
+                : missionProgress === "in-progress"
+                  ? "outline"
+                  : missionUnlocked
+                    ? "default"
+                    : "secondary"
+            }
           >
             {missionCompleted ? (
               <>
@@ -165,24 +222,26 @@ export function DailyMission() {
                 <Clock className="w-5 h-5 mr-2 animate-spin" />
                 진행 중...
               </>
-            ) : (
+            ) : missionUnlocked ? (
               <>
                 {currentMission.action}
                 <ExternalLink className="w-4 h-4 ml-2" />
               </>
+            ) : (
+              "출석체크 필요"
             )}
           </Button>
         </div>
       </div>
 
       {missionProgress === "in-progress" && (
-        <div className="gradient-mission rounded-lg p-3 text-center animate-pulse-glow">
+        <div className="bg-blue-500 rounded-lg p-3 text-center animate-pulse">
           <p className="text-sm text-white font-medium">미션을 수행하고 있습니다...</p>
         </div>
       )}
 
       {missionCompleted && (
-        <div className="gradient-success rounded-lg p-3 text-center animate-scale-in">
+        <div className="bg-green-500 rounded-lg p-3 text-center">
           <p className="text-sm text-white font-medium">오늘의 미션을 완료했습니다! 디맨드 플랫폼을 활용해보세요.</p>
         </div>
       )}
