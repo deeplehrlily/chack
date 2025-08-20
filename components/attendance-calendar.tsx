@@ -6,18 +6,17 @@ interface AttendanceCalendarProps {
 }
 
 export function AttendanceCalendar({ currentStreak }: AttendanceCalendarProps) {
-  const attendanceData = [
-    { day: "1일차", completed: true },
-    { day: "2일차", completed: true },
-    { day: "3일차", completed: true, current: true },
-    { day: "4일차", completed: false },
-    { day: "5일차", completed: false },
-    { day: "6일차", completed: false },
-    { day: "7일차", completed: false },
-    { day: "8일차", completed: false },
-    { day: "9일차", completed: false },
-    { day: "10일차", completed: false },
-  ]
+  const attendanceData = Array.from({ length: 10 }, (_, index) => {
+    const dayNumber = index + 1
+    const isCompleted = dayNumber <= currentStreak
+    const isCurrent = dayNumber === currentStreak && currentStreak > 0
+
+    return {
+      day: `${dayNumber}일차`,
+      completed: isCompleted,
+      current: isCurrent,
+    }
+  })
 
   return (
     <Card className="p-6 gradient-card border-0 shadow-lg hover-lift">
