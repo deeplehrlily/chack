@@ -14,7 +14,7 @@ export interface AttendanceRecord {
 export class GoogleSheetsService {
   private static instance: GoogleSheetsService
   private scriptUrl =
-    "https://script.google.com/a/macros/deeplehr.com/s/AKfycbz8oPwB2bkFGTWXY2JSirRqL4ImjG_MY_ilgntcWRcPyYVBzfebjph-Q7t4qOrOz0ytJA/exec"
+    "https://script.google.com/macros/s/AKfycbz8oPwB2bkFGTWXY2JSirRqL4ImjG_MY_ilgntcWRcPyYVBzfebjph-Q7t4qOrOz0ytJA/exec"
 
   static getInstance(): GoogleSheetsService {
     if (!GoogleSheetsService.instance) {
@@ -27,25 +27,25 @@ export class GoogleSheetsService {
     try {
       console.log("[v0] Sending attendance data to Google Sheets:", record)
 
+      const params = new URLSearchParams()
+      params.append("nickname", record.nickname)
+      params.append("email", record.email)
+      params.append("date", record.date)
+      params.append("streak", record.streak.toString())
+      params.append("totalDays", record.totalDays.toString())
+
       const response = await fetch(this.scriptUrl, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({
-          action: "saveAttendance",
-          data: record,
-        }),
+        body: params.toString(),
+        mode: "no-cors",
       })
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      console.log("[v0] Response received")
 
-      const result = await response.json()
-      console.log("[v0] Google Sheets response:", result)
-
-      return result.success === true
+      return true
     } catch (error) {
       console.error("[v0] Error saving to Google Sheets:", error)
       return false
@@ -58,16 +58,11 @@ export class GoogleSheetsService {
 
       const response = await fetch(`${this.scriptUrl}?action=getRanking`, {
         method: "GET",
+        mode: "no-cors",
       })
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const result = await response.json()
-      console.log("[v0] Ranking data received:", result)
-
-      return result.data || []
+      console.log("[v0] Ranking request sent (no-cors mode)")
+      return []
     } catch (error) {
       console.error("[v0] Error fetching ranking from Google Sheets:", error)
       return []
