@@ -16,6 +16,7 @@ export default function AttendancePage() {
   const [showCongrats, setShowCongrats] = useState(false)
   const [userInfo, setUserInfo] = useState<{ nickname: string; email: string } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [attendanceCompleted, setAttendanceCompleted] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -44,28 +45,28 @@ export default function AttendancePage() {
     const todayString = today.toISOString().split("T")[0] // YYYY-MM-DD format
     const lastCheckDate = localStorage.getItem("lastAttendanceDate")
 
-    // Check if user already attended today
     if (lastCheckDate === todayString) {
       setHasCheckedToday(true)
+      setAttendanceCompleted(true)
     } else {
-      // Check if it's a new day and reset streak if gap > 1 day
       if (lastCheckDate) {
         const lastDate = new Date(lastCheckDate)
         const daysDiff = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24))
 
         if (daysDiff > 1) {
-          // Reset streak if more than 1 day gap
           setCurrentStreak(0)
           localStorage.setItem("currentStreak", "0")
         }
       }
       setHasCheckedToday(false)
+      setAttendanceCompleted(false)
     }
 
     loadRankingFromSheets()
 
     const handleMissionCompleted = (event: CustomEvent) => {
       console.log("Mission completed:", event.detail)
+      loadRankingFromSheets()
     }
 
     window.addEventListener("missionCompleted", handleMissionCompleted as EventListener)
@@ -113,9 +114,16 @@ export default function AttendancePage() {
       setHasCheckedToday(true)
       setCurrentStreak(newStreak)
       setShowCongrats(true)
+      setAttendanceCompleted(true)
 
       localStorage.setItem("lastAttendanceDate", todayString)
       localStorage.setItem("currentStreak", newStreak.toString())
+
+      if (userInfo) {
+        const totalDaysStr = localStorage.getItem("totalAttendanceDays") || "0"
+        const totalDays = Number.parseInt(totalDaysStr) + 1
+        updateRankingData(userInfo.nickname, newStreak, totalDays)
+      }
 
       await saveAttendanceToSheet(newStreak)
 
@@ -164,14 +172,12 @@ export default function AttendancePage() {
       const existingRankingData = localStorage.getItem("rankingData")
       let rankingData = existingRankingData ? JSON.parse(existingRankingData) : []
 
-      // Find existing user or create new entry
-      const existingUserIndex = rankingData.findIndex((user: any) => user.name === nickname)
-
       const userIcons = ["👤", "🧑", "👩", "🧑‍💼", "👩‍💼", "🧑‍🎓", "👩‍🎓", "🧑‍💻", "👩‍💻", "🧑‍🔬"]
       const randomIcon = userIcons[Math.floor(Math.random() * userIcons.length)]
 
+      const existingUserIndex = rankingData.findIndex((user: any) => user.name === nickname)
+
       if (existingUserIndex >= 0) {
-        // Update existing user
         rankingData[existingUserIndex] = {
           ...rankingData[existingUserIndex],
           streak: streak,
@@ -179,7 +185,6 @@ export default function AttendancePage() {
           isCurrentUser: true,
         }
       } else {
-        // Add new user
         rankingData.push({
           name: nickname,
           streak: streak,
@@ -189,13 +194,11 @@ export default function AttendancePage() {
         })
       }
 
-      // Reset isCurrentUser for other users
       rankingData = rankingData.map((user: any) => ({
         ...user,
         isCurrentUser: user.name === nickname,
       }))
 
-      // Sort by streak (descending), then by totalDays (descending)
       rankingData.sort((a: any, b: any) => {
         if (b.streak !== a.streak) {
           return b.streak - a.streak
@@ -203,7 +206,6 @@ export default function AttendancePage() {
         return b.totalDays - a.totalDays
       })
 
-      // Assign ranks
       rankingData = rankingData.map((user: any, index: number) => ({
         ...user,
         rank: index + 1,
@@ -214,6 +216,11 @@ export default function AttendancePage() {
     } catch (error) {
       console.error("[v0] Error updating ranking data:", error)
     }
+  }
+
+  const handleMissionComplete = () => {
+    console.log("[v0] Mission completed, refreshing ranking data")
+    loadRankingFromSheets()
   }
 
   if (!userInfo) {
@@ -312,7 +319,7 @@ export default function AttendancePage() {
         </div>
 
         <div className="animate-slide-up">
-          <DailyMission />
+          <DailyMission attendanceCompleted={attendanceCompleted} onMissionComplete={handleMissionComplete} />
         </div>
 
         <div className="animate-slide-up">
