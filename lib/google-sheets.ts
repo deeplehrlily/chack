@@ -27,20 +27,21 @@ export class GoogleSheetsService {
     try {
       console.log("[v0] Sending attendance data to Google Sheets:", record)
 
-      const params = new URLSearchParams()
-      params.append("action", "saveAttendance")
-      params.append("nickname", record.nickname)
-      params.append("email", record.email)
-      params.append("date", record.date)
-      params.append("streak", record.streak.toString())
-      params.append("totalDays", record.totalDays.toString())
+      const requestData = {
+        action: "saveAttendance",
+        nickname: record.nickname,
+        email: record.email,
+        date: record.date,
+        streak: record.streak,
+        totalDays: record.totalDays,
+      }
 
       const response = await fetch(this.scriptUrl, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
         },
-        body: params.toString(),
+        body: JSON.stringify(requestData),
         mode: "no-cors",
       })
 
@@ -57,24 +58,87 @@ export class GoogleSheetsService {
     try {
       console.log("[v0] Fetching ranking data from Google Sheets")
 
-      // Since we can't read responses in no-cors mode, we'll fall back to localStorage
-      // and rely on the fact that data is being saved to Google Sheets
-      const localRanking = localStorage.getItem("attendanceRanking")
-      if (localRanking) {
-        const ranking = JSON.parse(localRanking)
-        console.log("[v0] Using local ranking data:", ranking)
+      const ranking = await this.fetchRankingWithPOST()
+      if (ranking && ranking.length > 0) {
+        console.log("[v0] Successfully fetched ranking from Google Sheets:", ranking)
+        // Cache the data locally
+        localStorage.setItem("attendanceRanking", JSON.stringify(ranking))
         return ranking
       }
 
-      console.log("[v0] No local ranking data available")
+      // Fallback to localStorage if Google Sheets fails
+      const localRanking = localStorage.getItem("attendanceRanking")
+      if (localRanking) {
+        const ranking = JSON.parse(localRanking)
+        console.log("[v0] Using cached local ranking data:", ranking)
+        return ranking
+      }
+
+      console.log("[v0] No ranking data available")
       return []
     } catch (error) {
       console.error("[v0] Error fetching ranking from Google Sheets:", error)
+
+      // Fallback to localStorage
+      const localRanking = localStorage.getItem("attendanceRanking")
+      if (localRanking) {
+        return JSON.parse(localRanking)
+      }
       return []
     }
   }
 
   async getUserRanking(): Promise<any[]> {
     return this.getRankingData()
+  }
+
+  private async fetchRankingWithPOST(): Promise<any[]> {
+    try {
+      console.log("[v0] Making POST request for ranking data")
+
+      const requestData = {
+        action: "getRanking",
+      }
+
+      try {
+        const response = await fetch(this.scriptUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestData),
+          mode: "cors",
+        })
+
+        console.log("[v0] CORS POST response received for ranking")
+
+        if (response.ok) {
+          const data = await response.json()
+          console.log("[v0] Successfully parsed ranking data:", data)
+          if (data.success && data.ranking) {
+            return data.ranking
+          }
+        }
+      } catch (corsError) {
+        console.log("[v0] CORS failed, trying no-cors mode")
+
+        // Fallback to no-cors mode
+        await fetch(this.scriptUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestData),
+          mode: "no-cors",
+        })
+
+        console.log("[v0] No-cors POST request sent for ranking")
+      }
+
+      return []
+    } catch (error) {
+      console.error("[v0] POST request failed:", error)
+      throw error
+    }
   }
 }
