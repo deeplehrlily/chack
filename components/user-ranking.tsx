@@ -4,14 +4,14 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trophy, Medal, Award, TrendingUp, Users, Crown } from "lucide-react"
+import { Trophy, TrendingUp, Users, Crown } from "lucide-react"
 
 interface User {
   rank: number
   name: string
   streak: number
   totalDays: number
-  icon: any
+  icon: string
   isCurrentUser?: boolean
 }
 
@@ -21,26 +21,81 @@ export function UserRanking() {
   const [rankingData, setRankingData] = useState<User[]>([])
 
   useEffect(() => {
-    const mockRankingData: User[] = [
-      { rank: 1, name: "김철수", streak: 15, totalDays: 20, icon: Trophy },
-      { rank: 2, name: "이영희", streak: 12, totalDays: 18, icon: Medal },
-      { rank: 3, name: "박민수", streak: 10, totalDays: 16, icon: Award },
-      { rank: 4, name: "정수진", streak: 8, totalDays: 15, icon: Award },
-      { rank: 5, name: "홍길동", streak: 7, totalDays: 14, icon: Award },
-      { rank: 6, name: "나현재", streak: 3, totalDays: 12, icon: Award, isCurrentUser: true },
-      { rank: 7, name: "최민호", streak: 5, totalDays: 11, icon: Award },
-      { rank: 8, name: "윤서연", streak: 4, totalDays: 10, icon: Award },
-    ]
+    const loadRankingData = () => {
+      try {
+        const storedRankingData = localStorage.getItem("rankingData")
+        if (storedRankingData) {
+          const parsedData = JSON.parse(storedRankingData)
+          setRankingData(parsedData)
 
-    setRankingData(mockRankingData)
+          // Find current user in ranking
+          const currentUser = parsedData.find((user: User) => user.isCurrentUser)
+          setCurrentUserRank(currentUser || null)
+        } else {
+          setRankingData([])
+          setCurrentUserRank(null)
+        }
+      } catch (error) {
+        console.error("Error loading ranking data:", error)
+        setRankingData([])
+        setCurrentUserRank(null)
+      }
+    }
 
-    // Find current user's rank
-    const currentUser = mockRankingData.find((user) => user.isCurrentUser)
-    setCurrentUserRank(currentUser || null)
+    loadRankingData()
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "rankingData") {
+        loadRankingData()
+      }
+    }
+
+    window.addEventListener("storage", handleStorageChange)
+
+    // Also listen for custom events when ranking updates in same tab
+    const handleRankingUpdate = () => {
+      loadRankingData()
+    }
+
+    window.addEventListener("rankingUpdated", handleRankingUpdate)
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange)
+      window.removeEventListener("rankingUpdated", handleRankingUpdate)
+    }
   }, [])
 
   const topThree = rankingData.slice(0, 3)
   const displayData = showFullRanking ? rankingData : topThree
+
+  if (rankingData.length === 0) {
+    return (
+      <Card className="p-6 space-y-5 bg-card border-0 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[color:var(--color-point-gold)]/20 rounded-lg flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-[color:var(--color-point-gold)]" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">출석 랭킹</h2>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Users className="w-4 h-4" />
+            <span>0명 참여</span>
+          </div>
+        </div>
+
+        <div className="text-center py-8 space-y-3">
+          <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto">
+            <Trophy className="w-8 h-8 text-muted-foreground/50" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">아직 랭킹이 없어요</h3>
+            <p className="text-sm text-muted-foreground">출석체크를 시작하면 랭킹이 생성됩니다!</p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -60,7 +115,6 @@ export function UserRanking() {
 
         <div className="space-y-3">
           {displayData.map((user) => {
-            const IconComponent = user.icon
             const isCurrentUser = user.isCurrentUser
 
             return (
@@ -74,7 +128,7 @@ export function UserRanking() {
               >
                 <div className="relative">
                   <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-md ${
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-md text-2xl ${
                       user.rank === 1
                         ? "bg-gradient-to-br from-[color:var(--color-point-gold)] to-yellow-500"
                         : user.rank === 2
@@ -84,7 +138,7 @@ export function UserRanking() {
                             : "bg-gradient-to-br from-muted to-muted-foreground"
                     }`}
                   >
-                    <IconComponent className="w-6 h-6 text-white" />
+                    <span className="text-white">{user.icon}</span>
                   </div>
                   {user.rank <= 3 && (
                     <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
